@@ -78,4 +78,63 @@ async def authenticate_user(email:EmailStr,password:str)->dict:
         "refresh_token": refresh_token,
     }
 
+async def refresh_tokens(refresh_token:str)->dict:
+    payload=decode_token(refresh_token)
+
+    if payload.get("type")!="refresh":
+        raise ValueError("invalid token type")
+
+    user_id=payload.get("sub")
+    user=await get_user_by_id(user_id)
+
+    if not user:
+        raise ValueError("user not found")
+
+    tokens=user.get("refresh_tokens",[])
+
+    if refresh_token not in tokens:
+        raise ValueError("refresh token revoked")
+
+    new_access=create_access_token(user_id)
+    new_refresh=create_refresh_token(user_id)
+
+    tokens.remove(refresh_token)
+    tokens.append(new_refresh)
+
+
+    await database.db.users.update_one(
+        {"_id":user["_id"]},
+        {
+            "$set":{"refresh_tokens":tokens}
+        }
+
+
+    )
+
+    return{
+        "access_token":new_access,
+        "refresh_token":new_refresh
+    }
+
+async def logout_user(refresh_token:str)->dict:
+    payload=decode_token(refresh_token)
+
+    if payload.get("type")!="refresh":
+        raise ValueError("invalid token type")
+
+    user_id=payload.get("sub")
+    user=await get_user_by_id(user_id)
+
+    if not user:
+        raise ValueError("user not found")
+
+    await database.db.users.update_one(
+        {"_id":user["_id"]},
+        {"$pull":{"refresh_tokens":refresh_token}}
+    )
+
+    return {"message":"user logged out successfully"}
+
+
+
 
